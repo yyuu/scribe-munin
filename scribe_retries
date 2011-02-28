@@ -1,0 +1,98 @@
+#!/usr/bin/env python
+
+##  Copyright (c) 2007-2008 Facebook
+##
+##  Licensed under the Apache License, Version 2.0 (the "License");
+##  you may not use this file except in compliance with the License.
+##  You may obtain a copy of the License at
+##
+##      http://www.apache.org/licenses/LICENSE-2.0
+##
+##  Unless required by applicable law or agreed to in writing, software
+##  distributed under the License is distributed on an "AS IS" BASIS,
+##  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+##  See the License for the specific language governing permissions and
+##  limitations under the License.
+##
+## See accompanying file LICENSE or visit the Scribe site at:
+## http://developers.facebook.com/scribe/
+
+'''scribe_counters: A simple script for running and monitoring scribe.'''
+
+import sys
+
+#make this work for facebook environment too
+isFacebook = 0
+if (isFacebook == 1):
+    # put your own path here!
+    sys.path.insert(0, '/mytrunk/fbcode-test/common/fb303/scripts')
+    from fb303_scripts import *
+    from fb303_scripts.fb303_simple_mgmt import *
+else:
+    from fb303_scripts import *
+    from fb303_scripts.fb303_simple_mgmt import *
+
+# thrift python packages need to be installed
+import thrift
+from thrift import protocol, transport
+from thrift.transport import TTransport
+from thrift.protocol import TBinaryProtocol
+
+def get_counters(
+                 port,
+                 trans_factory = None,
+                 prot_factory = None):
+    """
+    get counters from standard fb303 service
+
+    @param port: service's port
+    @param trans_factory: TTransportFactory to use for obtaining a TTransport. Default is
+                          TBufferedTransportFactory
+    @param prot_factory: TProtocolFactory to use for obtaining a TProtocol. Default is
+                         TBinaryProtocolFactory
+    """
+
+    counters = fb303_wrapper('counters',  port, trans_factory, prot_factory)
+    return counters
+
+
+port = os.environ.get('port')
+if port is None:
+    port = 1463
+
+counters = get_counters(port,
+                        trans_factory = TTransport.TFramedTransportFactory(),
+                        prot_factory = TBinaryProtocol.TBinaryProtocolFactory())
+categories = set([ key[0:key.index(':')] for key in counters.keys() if not(key.startswith('scribe')) ])
+
+if len(sys.argv) > 1:
+    if sys.argv[1] == 'autoconfig':
+        print 'yes'
+        sys.exit(0)
+    elif sys.argv[1] == 'config':
+        print('graph_title Scribe (port %s) retries' % (port))
+        print('graph_vlabel Retries per ${graph_period}')
+        print('graph_category Scribe')
+        print('graph_args --lower-limit 0')
+        print('graph_period minute')
+
+        draw = 'LINE2'
+        for category in categories:
+            print('%s_retries.label %s:retries' % (category, category))
+            print('%s_retries.type DERIVE' % (category))
+            print('%s_retries.draw %s' % (category, draw))
+            print('%s_retries.min 0' % (category))
+            draw = 'STACK'
+
+        print('scribe_overall_retries.label scribe_overall:retries')
+        print('scribe_overall_retries.type DERIVE')
+        print('scribe_overall_retries.draw LINE2')
+        print('scribe_overall_retries.min 0')
+
+        sys.exit(0)
+
+for category in categories:
+    print('%s_retries.value %d' % (category, counters.get(category + ':retries', 0)))
+print('scribe_overall_retries.value %d' % (counters.get('scribe_overall:retries', 0)))
+
+# vim:set ft=python :
